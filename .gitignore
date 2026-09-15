@@ -1,0 +1,15 @@
+# Local configuration
+.env
+.env.local
+
+# Python environment and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local ADK sessions and artifacts
+.adk/
