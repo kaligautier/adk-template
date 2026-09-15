@@ -1,6 +1,7 @@
 # Local configuration
 .env
 .env.local
+.gcloud/
 
 # Python environment and generated files
 .venv/
