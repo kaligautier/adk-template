@@ -9,6 +9,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.utils.error import ConfigurationError
 
+# ADK also reads Google configuration directly from the process environment.
+if not os.getenv("DOCKER_ENV"):
+    load_dotenv(find_dotenv(".env"))
+
 
 class Settings(BaseSettings):
     """
@@ -22,14 +26,7 @@ class Settings(BaseSettings):
     All settings are type-safe and validated by Pydantic.
     """
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=True,
-    )
-
-    # Auto-load .env file in non-Docker environments
-    if not os.getenv("DOCKER_ENV"):
-        load_dotenv(find_dotenv(".env"))
+    model_config = SettingsConfigDict(case_sensitive=True)
 
     # Application metadata
     APP_NAME: str = Field(
@@ -37,7 +34,7 @@ class Settings(BaseSettings):
         description="Application name displayed in API documentation",
     )
     APP_DESCRIPTION: str = Field(
-        default="Production-ready ADK agent template with best practices",
+        default="ADK agent template with independent services and HTTP integration",
         description="Application description for API documentation",
     )
     APP_VERSION: str = Field(
@@ -60,7 +57,7 @@ class Settings(BaseSettings):
     )
     DEBUG: bool = Field(
         default=False,
-        description="Enable debug mode (disable in production)",
+        description="Enable the ADK development UI and development endpoints",
     )
 
     # Logging configuration

@@ -46,12 +46,12 @@ This template provides a foundation for building Google ADK (Agent Development K
 **Key Features:**
 
 - ADK 2.6 `Workflow` root with an `LlmAgent` and custom tools
-- Hexagonal architecture patterns with a framework-independent services layer
+- Framework-independent services with thin ADK tool adapters
 - Enum-based operation validation and structured tool errors
 - Agent and tool lifecycle callbacks
 - Jinja2 instruction templates and environment-driven configuration
 - FastAPI application with the ADK development UI and a health endpoint
-- Unit tests with coverage reporting and Ruff quality checks
+- Unit and HTTP integration tests with coverage reporting and Ruff quality checks
 - Multi-stage Docker image running as a non-root user
 
 <a id="getting-started"></a>
@@ -108,7 +108,7 @@ Or run Uvicorn directly from `src/`:
 
 ```bash
 cd src
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+DEBUG=true uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Access the application:
@@ -118,6 +118,8 @@ Access the application:
 - Health: [http://localhost:8000/health](http://localhost:8000/health)
 
 Select `root` in the ADK UI and try a prompt such as `Calculate 12 multiplied by 7` or `What time is it in Europe/Paris?`.
+
+`just api` enables the ADK development UI explicitly. Without `DEBUG=true`, the application serves the ADK API only. The production launcher forces `DEBUG=false`.
 
 <a id="usage"></a>
 
@@ -133,7 +135,11 @@ from google.adk.agents import LlmAgent
 
 from app.components.callbacks.after_agent import log_agent_end
 from app.components.callbacks.before_agent import log_agent_start
-from app.components.callbacks.tool_callbacks import log_after_tool, log_before_tool
+from app.components.callbacks.tool_callbacks import (
+    handle_tool_error,
+    log_after_tool,
+    log_before_tool,
+)
 from app.components.tools.custom.example_tool import (
     calculate_tool,
     get_current_time_tool,
@@ -144,7 +150,7 @@ from app.config.settings import settings
 assistant_agent = LlmAgent(
     name=settings.AGENT_NAME,
     model=settings.MODEL,
-    mode="single_turn",
+    mode="chat",
     description=SINGLE_AGENT_DESCRIPTION,
     instruction=SINGLE_AGENT_INSTRUCTION,
     tools=[calculate_tool, get_current_time_tool],
@@ -152,6 +158,7 @@ assistant_agent = LlmAgent(
     after_agent_callback=log_agent_end,
     before_tool_callback=log_before_tool,
     after_tool_callback=log_after_tool,
+    on_tool_error_callback=handle_tool_error,
 )
 
 root_agent = Workflow(
@@ -161,6 +168,8 @@ root_agent = Workflow(
 ```
 
 Keep the exported variable named `root_agent` so ADK can discover it. Add workflow nodes and edges here as the application grows. Edit [agent_instruction.j2](src/app/instructions/templates/agent_instruction.j2) to customize the assistant's instructions.
+
+The assistant uses `mode="chat"` to receive previous turns from the same session. In an ADK workflow, a chat agent must be wired directly after `START`.
 
 ### Services Layer Pattern
 
@@ -204,6 +213,10 @@ calculate_tool = FunctionTool(func=calculate)
 
 See [SERVICES_VS_TOOLS.md](docs/SERVICES_VS_TOOLS.md) for the pattern and [example_tool.py](src/app/components/tools/custom/example_tool.py) for the complete adapters.
 
+Expected tool failures, such as division by zero or an unknown timezone, become `ToolExecutionError`. The agent's error callback returns a structured tool response with `status: "error"`, allowing the model to explain the failure or retry with corrected arguments. Unexpected exceptions still abort the run.
+
+For custom HTTP routes, the application maps `AppError` to its declared HTTP status and JSON body. `/run_sse` starts an HTTP 200 stream before execution completes; clients must inspect its events for execution errors.
+
 <a id="tests"></a>
 
 ## 🔧 Running Tests
@@ -218,7 +231,7 @@ just test
 uv run pytest --cov=app --cov-report=term-missing
 ```
 
-Tests cover services, tools, agent configuration, callbacks, instruction loading, and error handling. The test command reports the current test count and coverage.
+Tests cover services, tools, callbacks, instructions, configuration, HTTP and SSE agent runs, dev/prod modes, and the launcher. HTTP integration tests use the real ADK runner and a deterministic model, with sessions stored in a temporary directory; they do not prove live Gemini behavior. Both `test_*` and `should_*` functions are collected. `just test` enforces at least 83% coverage.
 
 Other development commands:
 
@@ -241,21 +254,42 @@ Build the image from the repository root:
 docker build -t adk-agent-template .
 ```
 
-For local execution on macOS or Linux, pass the environment configuration and mount the ADC file created during setup:
+For local execution on macOS or Linux, use the recipe to pass configuration and mount the ADC file created during setup:
 
 ```bash
-docker run --rm -p 127.0.0.1:8000:8000 \
-  --env-file .env \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json \
-  --mount "type=bind,source=${HOME}/.config/gcloud/application_default_credentials.json,target=/tmp/adc.json,readonly" \
-  adk-agent-template
+just run
 ```
 
-Adjust the source path if your Google Cloud CLI configuration directory differs from the default. The mounted file must be readable by the container's `app` user (UID 1000).
+Just loads `.env` and passes the resolved settings to Docker: quoted values are parsed and existing shell variables take precedence. The recipe enables local mode and forwards the settings listed in [justfile](justfile); include any additional provider settings there when extending the template.
 
-The default entry point runs Gunicorn with one Uvicorn worker. Append `local` after the image name to use Uvicorn with hot reload. The image checks `/health` to monitor application availability.
+Set `CLOUDSDK_CONFIG` if your Google Cloud CLI configuration directory differs from `${HOME}/.config/gcloud`. The mounted ADC file must be readable by the container's `app` user (UID 1000).
+
+The default entry point runs Gunicorn with one Uvicorn worker and the development UI disabled. Append `local` after the image name to enable the UI and Uvicorn hot reload. `HOST` and `PORT` configure the launcher. The image's health check targets port 8000; override the health check when changing the container port. `/health` is ADK's availability check and does not validate model credentials or a completed agent run.
 
 For Google Cloud deployment, configure [ADC for the runtime environment](https://cloud.google.com/docs/authentication/provide-credentials-adc), such as an attached service account with Vertex AI access.
+
+### Production boundary
+
+The template provides an API server; authentication is the deployment's responsibility. Restrict access with platform IAM or an authenticating reverse proxy, and prevent direct access that bypasses it. Keep the ADK Web UI local: [Google documents it as a development tool](https://adk.dev/runtime/web-interface/).
+
+The ADK API accepts a client-supplied `userId`. For a multi-user product, bind it to the authenticated identity and enforce session ownership in your API integration. Platform authentication alone does not implement that isolation.
+
+Configure durable session and artifact services in `create_app()` before relying on persistence across restarts or replicas. ADK defaults to local SQLite in development and may use in-memory storage on cloud platforms; neither is a shared production backend.
+
+### Optional Datadog tracing
+
+The default installation and image omit Datadog. To include it:
+
+```bash
+uv sync --extra datadog
+# Local production launcher with the optional dependency retained
+DD_TRACE_ENABLED=true uv run --extra datadog bash ./start_server.sh
+
+# Container variant
+docker build --build-arg INSTALL_DATADOG=true -t adk-agent-template:datadog .
+```
+
+For that container, add `DD_TRACE_ENABLED=true` and the Datadog configuration for your environment at runtime. Installing the extra alone does not enable tracing through the launcher. Requesting tracing without the extra fails with an installation hint.
 
 <a id="built-using"></a>
 
@@ -304,6 +338,8 @@ src/
 │   ├── utils/           # Error handling and logging
 │   ├── application.py   # FastAPI application factory
 │   └── main.py          # Application entry point
-├── test/unit/           # Unit tests
+├── test/
+│   ├── unit/            # Unit tests
+│   └── integration/     # HTTP/SSE runs and launcher behavior
 └── logging.conf         # Server logging configuration
 ```

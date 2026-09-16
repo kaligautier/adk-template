@@ -1,132 +1,96 @@
 # Architecture
 
-## Overview
+## Dependency flow
 
-This template follows hexagonal architecture with clear layer separation and ADK framework conventions.
-
-## Layer Structure
-
-```
-┌─────────────────────────────────────┐
-│  Presentation (main.py, routes/)    │  HTTP interface
-└─────────────────────────────────────┘
-             ↓
-┌─────────────────────────────────────┐
-│  Application (services/)             │  Business logic
-└─────────────────────────────────────┘
-             ↓
-┌─────────────────────────────────────┐
-│  Domain (components/agents/)         │  Agent definitions
-└─────────────────────────────────────┘
-             ↓
-┌─────────────────────────────────────┐
-│  Infrastructure (config/, utils/)    │  Configuration, logging
-└─────────────────────────────────────┘
+```text
+main.py -> create_app() -> ADK HTTP server
+                              |
+                              v
+                         root Workflow
+                              |
+                              v
+                         assistant_agent
+                              |
+                              v
+                         FunctionTool
+                              |
+                              v
+                         Python service
 ```
 
-## Key Decisions
+`services/` contains framework-independent business logic. ADK agents, tools,
+and callbacks live in `components/`. Configuration and prompt loading support
+orchestration. This separation allows services to run in another API, CLI, or
+job without importing ADK; it does not require additional domain abstractions.
 
-### 1. Component-Based Organization
+## Composition and discovery
 
-```
-components/
-├── agents/      # ADK auto-detects subfolders
-├── tools/       # Custom Python + MCP servers
-└── callbacks/   # Lifecycle hooks
-```
+`components/agents/root/agent.py` exports a `root_agent` workflow. Its first edge
+is `START -> assistant_agent`. The `LlmAgent` uses `mode="chat"` to include
+previous session turns in each model request, alongside the current turn's
+tool calls. ADK requires chat agents to be wired directly after `START`.
+Extend workflow edges for orchestration while preserving that constraint.
 
-**Why:** Clear separation, ADK conventions, scalability.
+ADK discovers agent directories containing `agent.py`. The exported variable is
+always named `root_agent`, including in an agent directory with another name.
 
-### 2. Services Layer Separation
+## Tools and errors
 
-Business logic lives in `services/`, ADK adapters in `tools/`.
+Services raise Python exceptions. Tool adapters validate and convert input,
+call a service, and wrap expected service failures in `ToolExecutionError`.
+The agent registers `handle_tool_error` as its `on_tool_error_callback`, which
+returns the exception fields plus `status: "error"` as a tool response. The
+model can explain the failure or correct its arguments. Unexpected exceptions
+abort execution.
 
-**Benefits:**
-- Framework-independent business logic
-- Testable without ADK overhead
-- Reusable across contexts
+FastAPI separately maps an `AppError` escaping an HTTP route to its
+`status_code` and `to_dict()` body. An SSE response has already sent its HTTP
+headers when execution starts, so failures appear in stream events; HTTP 200
+does not prove that a run completed.
 
-### 3. Pydantic Settings
+## Configuration and prompts
 
-Environment-driven configuration with type safety and validation.
+On importing the settings module, `.env` is loaded unless `DOCKER_ENV` is set.
+Existing environment variables have priority. `Settings` then validates the
+process environment. Google ADK reads provider settings from that same process.
 
-**Why:** Type safety, automatic .env loading, clear defaults.
+Jinja2 instructions are loaded from `instructions/templates/`, with frontmatter
+metadata and strict handling of undefined variables. The root agent's prompt
+is loaded at import time; changing the file requires reloading the agent.
 
-### 4. Jinja2 Instructions
+## Local and production execution
 
-Templates with frontmatter metadata for agent instructions.
+`DEBUG=false` selects ADK's API server. `DEBUG=true` selects its development
+server, including the UI. `just api` and the container's `local` argument enable
+that mode explicitly; the production launcher forces `DEBUG=false`.
 
-**Why:** Separates content from code, supports variables, version control friendly.
+Authentication is supplied by platform IAM or an authenticating proxy, with
+no route around that boundary. End-user identity and session ownership must be
+enforced by the adopting application. Disabling the UI alone does not add
+authentication or authorization.
 
-### 5. Error Hierarchy
+ADK selects default session and artifact storage. Local development uses files
+under `.adk/`; cloud detection can select in-memory storage. Configure durable
+services in `create_app()` for shared storage and persistence across restarts.
 
-Custom exceptions with automatic HTTP status mapping.
+The application uses ADK's single `/health` route. This checks server
+availability, not provider authentication or successful tool execution.
 
-```python
-class AppError(Exception):
-    error_code: ErrorCode
-    status_code: int  # Auto-mapped
-    message: str
-    details: dict
-```
+## Observability and packaging
 
-## File Organization
+Lifecycle callbacks log agent and tool names without dumping tool arguments.
+Datadog is an optional Python extra and Docker build option, enabled by the
+production launcher only when `DD_TRACE_ENABLED=true`.
 
-### Root Agent Pattern
+The Docker image uses locked dependencies and runs as a non-root user. The
+`tzdata` dependency supplies timezone data when the host does not provide it.
+See [Python's timezone documentation](https://docs.python.org/3/library/zoneinfo.html#data-sources).
 
-```
-components/agents/root/
-├── __init__.py
-└── agent.py  # Must export 'root_agent' variable
-```
+## Verification
 
-**Critical:** Variable name must match folder name for ADK auto-detection.
-
-### Tools Structure
-
-```
-components/tools/
-├── custom/      # Python functions
-│   └── example_tool.py
-└── mcp/         # MCP server integrations
-```
-
-### Services Structure
-
-```
-services/
-├── calculator_service.py  # Pure Python
-└── time_service.py        # No ADK dependencies
-```
-
-## Configuration Flow
-
-1. Environment variables (highest priority)
-2. `.env` file (auto-loaded if not Docker)
-3. Default values in `settings.py`
-
-## Error Handling
-
-```python
-# Service raises standard exceptions
-raise ValueError("Division by zero")
-
-# Tool wraps as ToolExecutionError
-raise ToolExecutionError(
-    message=str(e),
-    details={"operation": "divide", "a": 10, "b": 0}
-)
-```
-
-## Testing Strategy
-
-- **Services:** Fast unit tests, no ADK
-- **Tools:** Integration tests with mocked ToolContext
-- **Agent:** End-to-end tests via API
-
-## Design Principles
-
-1. **Dependency Direction:** Outer → Inner layers only
-2. **Framework Independence:** Business logic has no ADK imports
-3. **Type Safety:** Enums for operations, Pydantic for config
-4. **Clear Boundaries:** Each layer has single responsibility
+- Unit tests cover services, tool adapters, callbacks, settings, and prompts.
+- HTTP integration tests exercise discovery, sessions, conversation history,
+  the real ADK runner, tools, error recovery, and SSE with a deterministic model.
+- Launcher tests verify mode selection, configurable ports, and tracing opt-in.
+- `just test` collects both naming conventions and enforces 83% coverage.
+- Live Gemini behavior and deployment authentication require separate checks.

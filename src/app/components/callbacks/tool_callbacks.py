@@ -24,6 +24,8 @@ from typing import Any, Dict, Optional
 
 from google.adk.tools import BaseTool, ToolContext
 
+from app.utils.error import ToolExecutionError
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,7 @@ def log_before_tool(
         None: Proceed with tool execution
         Dict: Skip execution and return this dict as result
     """
-    logger.info(f"Tool '{tool.name}' called with args: {args}")
+    logger.info("Tool '%s' called", tool.name)
     return None  # Proceed with execution
 
 
@@ -66,3 +68,13 @@ def log_after_tool(
     """
     logger.info(f"Tool '{tool.name}' completed")
     return None  # Use original response
+
+
+def handle_tool_error(
+    tool: BaseTool, args: Dict[str, Any], tool_context: ToolContext, error: Exception
+) -> Optional[Dict]:
+    """Return expected tool failures to the model so it can explain or recover."""
+    if not isinstance(error, ToolExecutionError):
+        return None
+    logger.warning("Tool '%s' failed: %s", tool.name, error.error_code.name)
+    return {"status": "error", **error.to_dict()}

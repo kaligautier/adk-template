@@ -51,10 +51,10 @@ def test_settings_validation():
     import os
     from unittest.mock import patch
 
+    from app.config.settings import Settings
+
     # Remove required env var temporarily
     with patch.dict(os.environ, {}, clear=True):
         # Should raise ValidationError for missing required fields
         with pytest.raises(ValidationError):
-            from app.config.settings import Settings
-
-            Settings()
+            Settings(_env_file=None)

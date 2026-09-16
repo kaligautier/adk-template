@@ -104,6 +104,10 @@ class TestGetCurrentTimeTool:
 
         assert result["timezone"] == "America/New_York"
 
+    def should_wrap_invalid_timezone_as_tool_error(self, mock_tool_context):
+        with pytest.raises(ToolExecutionError, match="Unknown timezone"):
+            get_current_time("Mars/Olympus", mock_tool_context)
+
     def should_work_without_tool_context(self):
         """Test get_current_time when tool_context is None."""
         result = get_current_time(timezone="UTC", tool_context=None)

@@ -25,7 +25,11 @@ from google.adk.agents import LlmAgent
 
 from app.components.callbacks.after_agent import log_agent_end
 from app.components.callbacks.before_agent import log_agent_start
-from app.components.callbacks.tool_callbacks import log_after_tool, log_before_tool
+from app.components.callbacks.tool_callbacks import (
+    handle_tool_error,
+    log_after_tool,
+    log_before_tool,
+)
 from app.components.tools.custom.example_tool import (
     calculate_tool,
     get_current_time_tool,
@@ -38,7 +42,7 @@ logger = logging.getLogger(__name__)
 assistant_agent = LlmAgent(
     name=settings.AGENT_NAME,
     model=settings.MODEL,
-    mode="single_turn",
+    mode="chat",
     description=SINGLE_AGENT_DESCRIPTION,
     instruction=SINGLE_AGENT_INSTRUCTION,
     tools=[
@@ -49,6 +53,7 @@ assistant_agent = LlmAgent(
     after_agent_callback=log_agent_end,  # Log when agent completes
     before_tool_callback=log_before_tool,  # Log before each tool call
     after_tool_callback=log_after_tool,  # Log after each tool call
+    on_tool_error_callback=handle_tool_error,
 )
 
 # CAUTION: this variable should always be called `root_agent` to be discovered by ADK.

@@ -1,19 +1,22 @@
 [project]
 name = "adk-agent-template"
 version = "0.1.0"
-description = "Production-ready ADK agent template with best practices"
+description = "ADK agent template with independent services and HTTP integration"
 requires-python = ">=3.12,<4.0"
 dependencies = [
-    "ddtrace==4.8.2",
     "dotenv>=0.9.9",
-    # ddtrace 4.8.2 uses the ADK 2.6 tool instrumentation API.
     "google-adk>=2.6.1,<2.7.0",
     "gunicorn>=23.0.0",
     "jinja2>=3.1.6",
     "pydantic>=2.11.4",
     "pydantic-settings>=2.10.0",
     "python-frontmatter>=1.1.0",
+    "tzdata>=2025.2",
 ]
+
+[project.optional-dependencies]
+# ddtrace 4.8.2 uses the ADK 2.6 tool instrumentation API.
+datadog = ["ddtrace==4.8.2"]
 
 [build-system]
 requires = ["hatchling"]
@@ -52,14 +55,15 @@ known-first-party = ["app"]
 [tool.pytest.ini_options]
 testpaths = ["src/test"]
 python_files = "test_*.py"
-python_functions = "should_*"
+python_functions = ["test_*", "should_*"]
 asyncio_mode = "auto"
 env = [
-    "D:GOOGLE_GENAI_USE_VERTEXAI=true",
-    "D:GOOGLE_CLOUD_PROJECT=test-project",
-    "D:GOOGLE_CLOUD_LOCATION=us-central1",
-    "D:LOG_LEVEL=ERROR",
-    "D:DEBUG=true",
+    "GOOGLE_GENAI_USE_VERTEXAI=true",
+    "GOOGLE_CLOUD_PROJECT=test-project",
+    "GOOGLE_CLOUD_LOCATION=us-central1",
+    "LOG_LEVEL=ERROR",
+    "DEBUG=false",
+    "DOCKER_ENV=1",
 ]
 
 [dependency-groups]
