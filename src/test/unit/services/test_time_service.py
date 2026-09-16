@@ -1,7 +1,9 @@
 """Unit tests for time service."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
+
+import pytest
 
 from app.services.time_service import TimeClient
 
@@ -49,6 +51,39 @@ class TestTimeClientGetCurrentTimeInfo:
         result = client.get_current_time_info("America/New_York")
 
         assert result["timezone"] == "America/New_York"
+
+    @pytest.mark.parametrize(
+        ("month", "timezone_name", "expected_hour", "offset_hours"),
+        [
+            (1, "Europe/Paris", 13, 1),
+            (7, "Europe/Paris", 14, 2),
+            (7, "America/New_York", 8, -4),
+        ],
+    )
+    def should_convert_time_and_apply_daylight_saving(
+        self, monkeypatch, month, timezone_name, expected_hour, offset_hours
+    ):
+        instant = datetime(2026, month, 15, 12, tzinfo=dt_timezone.utc)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return instant.astimezone(tz)
+
+        monkeypatch.setattr("app.services.time_service.datetime", FixedDateTime)
+
+        result = TimeClient().get_current_time_info(timezone_name)
+        local_time = datetime.fromisoformat(result["timestamp"])
+
+        assert local_time.hour == expected_hour
+        assert local_time.utcoffset() == timedelta(hours=offset_hours)
+        assert result["unix_timestamp"] == int(instant.timestamp())
+        assert f"{expected_hour:02}:00:00" in result["formatted"]
+
+    @pytest.mark.parametrize("timezone_name", ["Mars/Olympus", "", "/etc/passwd"])
+    def should_reject_invalid_timezone(self, timezone_name):
+        with pytest.raises(ValueError, match="Unknown timezone"):
+            TimeClient().get_current_time_info(timezone_name)
 
     def should_return_current_time_close_to_now(self):
         """Test returned time is close to actual current time."""

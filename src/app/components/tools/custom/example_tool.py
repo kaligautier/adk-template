@@ -23,7 +23,7 @@ def calculate(
     ADK tool wrapper for calculator service.
 
     This is a thin adapter that:
-    - Provides async interface for ADK
+    - Exposes a synchronous function through ADK's FunctionTool
     - Handles ADK-specific context
     - Wraps service exceptions as ToolExecutionError
     - Uses Operation enum for type safety
@@ -74,9 +74,12 @@ def get_current_time(
     """
     logger.info(f"Get current time tool called: {timezone or 'UTC'}")
 
-    # Call business logic client
-    result = time_client.get_current_time_info(timezone)
-    return result
+    try:
+        return time_client.get_current_time_info(timezone)
+    except ValueError as exc:
+        raise ToolExecutionError(
+            message=str(exc), details={"timezone": timezone}
+        ) from exc
 
 
 # ADK Tool definitions

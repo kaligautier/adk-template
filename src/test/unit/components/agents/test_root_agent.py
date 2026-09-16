@@ -32,11 +32,11 @@ class TestRootAgent:
 
         assert assistant_agent.model == settings.MODEL
 
-    def should_use_single_turn_mode(self):
-        """Test workflow leaves use deterministic single-turn execution."""
+    def should_use_chat_mode(self):
+        """Test the assistant is configured for multi-turn conversations."""
         from app.components.agents.root.agent import assistant_agent
 
-        assert assistant_agent.mode == "single_turn"
+        assert assistant_agent.mode == "chat"
 
     def should_have_description(self):
         """Test agent has description."""

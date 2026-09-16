@@ -6,6 +6,7 @@ FROM python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316ff
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    DOCKER_ENV=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
@@ -22,6 +23,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.2@sha256:069a51314a7bb6031777a9273205fe1b0
 # =============================================================================
 FROM base AS builder
 
+ARG INSTALL_DATADOG=false
+
 WORKDIR /app
 
 # Copy dependency files
@@ -29,7 +32,11 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    if [ "$INSTALL_DATADOG" = "true" ]; then \
+        uv sync --frozen --no-dev --no-install-project --extra datadog; \
+    else \
+        uv sync --frozen --no-dev --no-install-project; \
+    fi
 
 # =============================================================================
 # Stage 3: Runtime

@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from datetime import timezone as dt_timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +22,16 @@ class TimeClient:
         """
         logger.debug(f"Getting current time for timezone: {timezone_name or 'UTC'}")
 
-        # For simplicity, we'll just return UTC time
-        # In production, use pytz or zoneinfo for proper timezone handling
-        now = datetime.now(dt_timezone.utc)
+        timezone_name = "UTC" if timezone_name is None else timezone_name
+        try:
+            timezone = ZoneInfo(timezone_name)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Unknown timezone: {timezone_name}") from exc
+
+        now = datetime.now(timezone)
 
         return {
-            "timezone": timezone_name or "UTC",
+            "timezone": timezone_name,
             "timestamp": now.isoformat(),
             "unix_timestamp": int(now.timestamp()),
             "formatted": now.strftime("%Y-%m-%d %H:%M:%S %Z"),

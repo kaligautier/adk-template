@@ -72,7 +72,7 @@ def my_tool(data: str, tool_context: ToolContext) -> dict:
     """ADK adapter."""
     try:
         return process_data(data)
-    except Exception as e:
+    except ValueError as e:
         raise ToolExecutionError(
             message=str(e),
             details={"data": data}
@@ -85,13 +85,19 @@ my_tool_instance = FunctionTool(func=my_tool)
 
 ```python
 # components/agents/root/agent.py
+from app.components.callbacks.tool_callbacks import handle_tool_error
 from app.components.tools.custom.my_tool import my_tool_instance
 
-root_agent = LlmAgent(
+assistant_agent = LlmAgent(
     name="template_agent",
     tools=[my_tool_instance, ...],
+    on_tool_error_callback=handle_tool_error,
 )
 ```
+
+Keep `root_agent` as the workflow composition point. Its edges reference the
+assistant agent. Wrap expected service errors at the tool boundary; avoid
+catching every exception, which would hide programming defects from the caller.
 
 ## Testing
 

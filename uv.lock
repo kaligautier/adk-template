@@ -12,7 +12,6 @@ name = "adk-agent-template"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "ddtrace" },
     { name = "dotenv" },
     { name = "google-adk" },
     { name = "gunicorn" },
@@ -20,6 +19,12 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-frontmatter" },
+    { name = "tzdata" },
+]
+
+[package.optional-dependencies]
+datadog = [
+    { name = "ddtrace" },
 ]
 
 [package.dev-dependencies]
@@ -34,7 +39,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ddtrace", specifier = "==4.8.2" },
+    { name = "ddtrace", marker = "extra == 'datadog'", specifier = "==4.8.2" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "google-adk", specifier = ">=2.6.1,<2.7.0" },
     { name = "gunicorn", specifier = ">=23.0.0" },
@@ -42,7 +47,9 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.4" },
     { name = "pydantic-settings", specifier = ">=2.10.0" },
     { name = "python-frontmatter", specifier = ">=1.1.0" },
+    { name = "tzdata", specifier = ">=2025.2" },
 ]
+provides-extras = ["datadog"]
 
 [package.metadata.requires-dev]
 dev = [

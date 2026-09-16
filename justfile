@@ -22,7 +22,7 @@ install: _check-uv
 # Launch agent as API server
 [group('run')]
 api: _check-uv
-    cd {{ source_directory() }}/src && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+    cd {{ source_directory() }}/src && DEBUG=true uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 # Format code with ruff
 [group('quality')]
@@ -41,7 +41,7 @@ lint: _check-uv
 # Run full test suite with coverage
 [group('quality')]
 test: _check-uv
-    cd {{ source_directory() }}/src && uv run pytest --cov=app --cov-report=term-missing
+    cd {{ source_directory() }}/src && PYTHONDONTWRITEBYTECODE=1 uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=83
 
 # Run all quality checks (format + lint + test) - required before commit
 [group('quality')]
@@ -52,11 +52,17 @@ pre-commit: format lint test
 build:
     cd {{ source_directory() }} && docker build --no-cache -t adk-agent-template:latest .
 
-# Run Docker container with environment variables from .env
+# Run Docker with the environment already resolved by Just's dotenv loader
 [group('docker')]
 run:
-    cd {{ source_directory() }} && docker run -p 8000:8000 \
-        -e GOOGLE_GENAI_USE_VERTEXAI="${GOOGLE_GENAI_USE_VERTEXAI}" \
-        -e GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT}" \
-        -e GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION}" \
+    cd {{ source_directory() }} && docker run --rm -p 127.0.0.1:8000:8000 \
+        -e GOOGLE_GENAI_USE_VERTEXAI \
+        -e GOOGLE_CLOUD_PROJECT \
+        -e GOOGLE_CLOUD_LOCATION \
+        -e APP_NAME -e APP_DESCRIPTION -e APP_VERSION -e PROJECT_NAME \
+        -e HOST -e PORT -e DEBUG -e LOG_LEVEL \
+        -e AGENT_NAME -e MODEL -e USER_ID \
+        -e DD_TRACE_ENABLED \
+        -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json \
+        --mount "type=bind,source=${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json,target=/tmp/adc.json,readonly" \
         adk-agent-template:latest local

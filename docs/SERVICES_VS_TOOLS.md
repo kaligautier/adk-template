@@ -72,7 +72,7 @@ def calculate(
 ) -> dict:
     """ADK tool wrapper - delegates to service."""
     try:
-        return calculator_client.calculate(operation, a, b)
+        return calculator_client.calculate(Operation(operation), a, b)
     except ValueError as e:
         raise ToolExecutionError(
             message=str(e),
@@ -114,10 +114,10 @@ def test_add():
 
 def test_invalid_operation():
     with pytest.raises(ValueError):
-        calculator_client.calculate("invalid", 5, 3)
+        calculator_client.calculate(Operation("invalid"), 5, 3)
 ```
 
-### Tool Tests (Integration)
+### Tool Adapter Tests (Unit)
 
 ```python
 # test/unit/components/tools/test_example_tool.py
@@ -129,6 +129,16 @@ def test_tool_error_handling(mock_tool_context):
     with pytest.raises(ToolExecutionError):
         calculate(Operation.DIVIDE, 10, 0, mock_tool_context)
 ```
+
+### ADK and HTTP Integration
+
+`src/test/integration/test_application.py` calls the real HTTP server and ADK
+runner with a deterministic model. It verifies successful calculations and
+recovery from expected tool errors through both `/run` and `/run_sse`.
+
+The agent must register `handle_tool_error` as `on_tool_error_callback` to
+deliver `ToolExecutionError` to the model as a structured response. Direct
+Python callers of the adapter still receive the exception.
 
 ## When to Use This Pattern
 

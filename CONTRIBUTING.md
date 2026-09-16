@@ -102,10 +102,9 @@ test: add integration tests for time service
 
 1. **Update documentation**: If your changes affect functionality, update relevant docs
 
-2. **Ensure CI passes**: All GitHub Actions workflows must pass:
-   - Tests workflow
-   - Linting workflow
-   - Docker build workflow
+2. **Verify locally**: Run `just test`, `just lint`, and `just build` when the
+   image or dependencies change. The repository does not include a CI workflow;
+   configure these gates in your hosting platform when adopting the template.
 
 3. **Write a clear PR description**:
    - What does this PR do?
@@ -121,7 +120,7 @@ test: add integration tests for time service
 
 This template follows specific architectural patterns. Please maintain consistency:
 
-### Hexagonal Architecture
+### ADK and Business Logic Boundaries
 
 - **Services Layer** (`services/`): Pure Python business logic, no ADK dependencies
 - **Tools Layer** (`components/tools/custom/`): Thin ADK wrappers that call services
@@ -164,8 +163,8 @@ This template follows specific architectural patterns. Please maintain consisten
 #### Adding a New Agent
 
 1. Create folder: `components/agents/my_agent/`
-2. Create `agent.py` with variable matching folder name
-3. Export agent: `my_agent = LlmAgent(...)`
+2. Create `agent.py` exporting a variable named `root_agent`
+3. Export agent: `root_agent = LlmAgent(name="my_agent", ...)`
 4. Add tests in `test/unit/components/agents/`
 
 ## Testing Guidelines
@@ -184,7 +183,7 @@ test/
 │   ├── services/           # Service layer tests (fast)
 │   ├── components/         # Tool and agent tests
 │   └── utils/              # Utility tests
-└── conftest.py             # Test fixtures
+└── integration/            # HTTP/SSE runner and launcher tests
 ```
 
 ### Running Tests
@@ -193,8 +192,8 @@ test/
 # Run all tests
 just test
 
-# Run specific test file
-uv run pytest test/unit/services/test_calculator_service.py
+# Run specific test file from the repository root
+uv run pytest src/test/unit/services/test_calculator_service.py
 
 # Run with verbose output
 uv run pytest -v
@@ -202,6 +201,12 @@ uv run pytest -v
 # Run with coverage report
 uv run pytest --cov=app --cov-report=html
 ```
+
+Both `test_*` and `should_*` functions are collected. Tests force dummy Google
+configuration and disable automatic `.env` loading. Construct `Settings` with
+an isolated environment when testing defaults or missing configuration.
+Integration tests use a deterministic model and temporary session storage;
+keep live model calls separate from this suite.
 
 ## Reporting Issues
 
